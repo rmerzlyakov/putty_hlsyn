@@ -16,8 +16,6 @@ For a specific connection:
 2. Go to the section "Window -> Color -> Colorization", turn on "Enable colorization".
 3. Go to the Session section, save with the "Save" button.
 
-If there are saved named sessions, then for them you also need to do this procedure.
-
 ## Principle of work
 The displayed text is analyzed line by line by a list of regular expressions and what will be found is painted in a predefined color.
 
