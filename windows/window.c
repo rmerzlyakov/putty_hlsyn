@@ -441,11 +441,14 @@ static void start_backend(void)
 
 static void close_session(void *ignored_context)
 {
+    const char* oldtitle;
     char *newtitle;
     int i;
 
     session_closed = true;
-    newtitle = dupprintf("%s (inactive)", appname);
+
+    oldtitle = wintw_get_title(wintw, false);
+    newtitle = dupprintf("%s (X)", oldtitle);
     win_set_icon_title(wintw, newtitle);
     win_set_title(wintw, newtitle);
     sfree(newtitle);

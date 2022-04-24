@@ -104,6 +104,9 @@ typedef struct color {
 #define  COLOR_GREEN { 101, 226, 107 }
 #define  COLOR_RED { 226, 101, 107 }
 #define  COLOR_STRONG_RED { 255, 0, 0 }
+#define  COLOR_ERROR { 255, 0, 0 }
+#define  COLOR_WARNING { 167, 94, 42 }
+#define  COLOR_INFO { 161, 195, 232 }
 #define  COLOR_SHUTDOWN { 234, 234, 102 }
 
 struct colorize_pattern {
@@ -191,7 +194,9 @@ struct colorize_pattern colorize_pattern_arr[] = {
 	Error: Unrecognized command found at '^' position.
 	Error: Failed to pass the authorization.
 	*/
-	{ "^Error\\:\\s.*", COLOR_STRONG_RED },
+	{ "^Error\\:.*", COLOR_ERROR },
+    { "^Warning\\:.*", COLOR_WARNING },
+    { "^Info\\:.*", COLOR_INFO },
 	/* Cisco: all that started with "% " is error 
 	yourname#sh abcd
 	             ^
