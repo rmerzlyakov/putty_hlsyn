@@ -1,5 +1,5 @@
 /*
- * Terminal emulator.
+ * Terminal emulator. PCRE2 migration.
  */
 
 #include <stdio.h>
