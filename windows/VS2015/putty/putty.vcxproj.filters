@@ -482,10 +482,7 @@
     <ClInclude Include="..\..\..\pcre\config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\pcre\pcre.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\pcre\pcre_internal.h">
+    <ClInclude Include="..\..\..\include\pcre2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

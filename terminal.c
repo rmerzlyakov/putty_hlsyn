@@ -17,7 +17,7 @@
 #define PCRE_STATIC
 #endif
 
-#include "pcre.h"
+#include "pcre2.h"
 
 #define VT52_PLUS
 
@@ -112,13 +112,28 @@ typedef struct color {
 struct colorize_pattern {
 	const char *pattern;
 	color color;
-	pcre *compiled_regex;
+    pcre2_code* compiled_regex;
 };
 
 /*
 (?<=^|\\s) - look behind matching group, not included in result
 (?=$|[\\s\\r\\,])
 */
+/*  detailed explanation IPV6 regex (from https://stackoverflow.com/questions/32368008/regular-expression-that-matches-all-valid-format-ipv6-addresses)
+    # (([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|            1:2:3:4:5:6:7:8
+    # ([0-9a-fA-F]{1,4}:){1,7}:|                            1:2:3:4:5:6:7::
+    # ([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|            1:2:3:4:5:6::8 - 1::8
+    # ([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|     1:2:3:4:5::7:8 - 1::7:8 - 1::8
+    # ([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|     1:2:3:4::6:7:8 - 1::6:7:8 - 1::8
+    # ([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|     1:2:3::5:6:7:8 - 1::5:6:7:8 - 1::8
+    # ([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|     1:2::4:5:6:7:8 - 1::4:5:6:7:8 - 1::8
+    # [0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|          1::3:4:5:6:7:8 - 1::8
+    # :((:[0-9a-fA-F]{1,4}){1,7}|:)|                        ::2:3:4:5:6:7:8 - ::
+    # fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|        fe80:2:3:4:5%GigabitEthernet0/0 - fe80:GigabitEthernet0/0
+    # ::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|
+    # ([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))
+*/
+
 struct colorize_pattern colorize_pattern_arr[] = {
 	{ "^interface\\s\\S+(?=\\s*$)", COLOR_INTERFACE } /* interface Abcdef */,
 	/*
@@ -147,7 +162,9 @@ struct colorize_pattern colorize_pattern_arr[] = {
 	*/
 	{ "(?<!\\w)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(?=\\W)", COLOR_IP_ADDR } /* 192.168.1.1 or 255.255.255.0 */,
 	{ "(?<!\\w)\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\/\\d{1,2}(?=\\W)", COLOR_IP_ADDR } /* 192.168.1.1/24 */,
-	/*
+    /* IP V6 addresses*/
+    { "(?<!\\w)(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|[Ff][Ee]80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::((ffff|FFFF)(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(/\\d{1,2})?(?!(:|\\w))", COLOR_IP_ADDR },
+    /*
 	Cisco:  MAC in form 0102.abcd.5678
 	Huawei: MAC in form 0102-abcd-5678
 	Jan 11 11:19:14.155: %DOT1X-5-FAIL: Authentication failed for client (c31f.ea5c.ff69) on Interface Gi2/0/2 AuditSessionID 0AD7364101006F37131C7CF1
@@ -1879,18 +1896,21 @@ Terminal *term_init(Conf *myconf, struct unicode_data *ucsdata, TermWin *win)
 
     term->bracketed_paste_active = false;
 
-	const char *error;
-	int erroffset;
+	int errornumber;
+    PCRE2_SIZE erroroffset;
 
 	const size_t pattern_n = sizeof(colorize_pattern_arr) / sizeof(colorize_pattern_arr[0]);
 
 	for (int p = 0; p < pattern_n; p++) {
 		colorize_pattern_arr[p].compiled_regex = NULL;
-		pcre *re = pcre_compile(colorize_pattern_arr[p].pattern, 0, &error, &erroffset, NULL);
+        pcre2_code* re = pcre2_compile(colorize_pattern_arr[p].pattern, PCRE2_ZERO_TERMINATED, 0, &errornumber, &erroroffset, NULL);
 		if (re == NULL)
 		{
-			printf("regex %s compilation failed at offset %d: %s\n", colorize_pattern_arr[p].pattern, erroffset, error);
-			exit(1); // or assert?
+            PCRE2_UCHAR buffer[256];
+            pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+            printf("PCRE2 compilation failed at offset %d: %s\n", (int)erroroffset,
+                buffer);
+            exit(1); // or assert?
 		}
 		else {
 			colorize_pattern_arr[p].compiled_regex = re;
@@ -5541,57 +5561,79 @@ static void colorize_substr(termchar *termchars, const unsigned int from, const 
 	}
 }
 
-#define OVECCOUNT 30    /* should be a multiple of 3 */
-
 static void find_patterns(termline *ldata, const char *s ) {
 	const size_t pattern_n = sizeof(colorize_pattern_arr) / sizeof(colorize_pattern_arr[0]);
 	size_t s_length = strlen(s);
 
 	for (unsigned int p = 0; p < pattern_n; p++) {
-		int rc;
-		int ovector[OVECCOUNT];
+        pcre2_match_data* match_data;
+        match_data = pcre2_match_data_create_from_pattern(colorize_pattern_arr[p].compiled_regex, NULL);
 
-		rc = pcre_exec(
+		int rc;
+        PCRE2_SIZE* ovector;
+        int ovector0;
+        int ovector1;
+		rc = pcre2_match(
 			colorize_pattern_arr[p].compiled_regex, /* the compiled pattern */
-			NULL,                 /* no extra data - we didn't study the pattern */
 			s,                    /* the subject string */
 			s_length,             /* the length of the subject */
 			0,                    /* start at offset 0 in the subject */
 			0,                    /* default options */
-			ovector,              /* output vector for substring information */
-			OVECCOUNT);           /* number of elements in the output vector */
-		if ((rc == PCRE_ERROR_NOMATCH) || (rc == 0)) { continue; }
-		colorize_substr(ldata->chars, ovector[0], ovector[1]-ovector[0], colorize_pattern_arr[p].color);
+			match_data,           /* block for storing the result */
+			NULL);                /* use default match context */
+		if (rc < 0) {
+            pcre2_match_data_free(match_data);
+            continue;
+        }
+        uint32_t ovector_count = pcre2_get_ovector_count(match_data);
+        if (ovector_count < 1) {
+            pcre2_match_data_free(match_data);
+            continue;
+        }
+        ovector = pcre2_get_ovector_pointer(match_data);
+        ovector0 = (int)ovector[0];
+        ovector1 = (int)ovector[1];
+        pcre2_match_data_free(match_data);
+		colorize_substr(ldata->chars, ovector0, ovector1-ovector0, colorize_pattern_arr[p].color);
+
 		for (int i = 0; i < s_length; i++) { /* var i never used; for_loop only to avoid potential infinite cycle (it's little bit paranoidal) */
 			int options = 0;
-			int start_offset = ovector[1];
-			if (ovector[0] == ovector[1]) {
-				if (ovector[0] == s_length) break;
+			int start_offset = ovector1;
+			if (ovector0 == ovector1) {
+				if (ovector0 == s_length) break;
 				/* special call of pcre_exec()
 				   is made with the PCRE_NOTEMPTY_ATSTART and PCRE_ANCHORED flags set.
 				   The first of these tells PCRE that an empty string at the start of the 
 				   subject is not a valid match; other possibilities must be tried. The  
 				   second flag restricts PCRE to one match attempt at the initial string 
 				   position. */
-				options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED;
+				options = PCRE2_NOTEMPTY_ATSTART | PCRE2_ANCHORED;
 			}
-
-			rc = pcre_exec(
+            match_data = pcre2_match_data_create_from_pattern(colorize_pattern_arr[p].compiled_regex, NULL);
+			rc = pcre2_match(
 				colorize_pattern_arr[p].compiled_regex,                   /* the compiled pattern */
-				NULL,                 /* no extra data - we didn't study the pattern */
 				s,                    /* the subject string */
 				s_length,             /* the length of the subject */
 				start_offset,         /* starting offset in the subject */
 				options,              /* options */
-				ovector,              /* output vector for substring information */
-				OVECCOUNT);           /* number of elements in the output vector */
-			if (rc == PCRE_ERROR_NOMATCH) {
+				match_data,           /* block for storing the result */
+				NULL);                /* use default match context */
+			if (rc < 0 ) {
+                pcre2_match_data_free(match_data);
 				if (options == 0) break;
-				ovector[1] = start_offset + 1;
+				//ovector[1] = start_offset + 1;
 				continue;
 			}
-			if (rc < 0)	break;
-			colorize_substr(ldata->chars, ovector[0], ovector[1]-ovector[0], colorize_pattern_arr[p].color);
+            uint32_t ovector_count = pcre2_get_ovector_count(match_data);
+            if (ovector_count < 1) {
+                pcre2_match_data_free(match_data);
+                continue;
+            }
+            ovector = pcre2_get_ovector_pointer(match_data);
+            ovector0 = (int)ovector[0];
+            ovector1 = (int)ovector[1];
+            pcre2_match_data_free(match_data);
+			colorize_substr(ldata->chars, ovector0, ovector1-ovector0, colorize_pattern_arr[p].color);
 		}
 	}
 }

@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.32002.261
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pageant", "pageant\pageant.vcxproj", "{FCC23BDF-C70D-4C37-843A-1D3CF6F0F073}"
 EndProject
@@ -22,7 +22,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "puttytel", "puttytel\puttyt
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "testcrypt", "testcrypt\testcrypt.vcxproj", "{A3C27DB0-8AE6-4BED-BE53-CE43DB003148}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libpcre-static", "libpcre-static\libpcre-static.vcxproj", "{06FBB7DF-0F33-4DA7-BDFD-F8018C8DB2C3}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libpcre2-8-static", "libpcre-static\libpcre2-8-static.vcxproj", "{06FBB7DF-0F33-4DA7-BDFD-F8018C8DB2C3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -88,5 +88,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {12235A9A-9BB1-494D-80D9-EB05C331C37B}
 	EndGlobalSection
 EndGlobal
