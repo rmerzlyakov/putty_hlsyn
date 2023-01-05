@@ -78,48 +78,57 @@ void cmdline_cleanup(void)
 
 /*
  * Similar interface to seat_get_userpass_input(), except that here a
- * -1 return means that we aren't capable of processing the prompt and
- * someone else should do it.
+ * SPR(K)_INCOMPLETE return means that we aren't capable of processing
+ * the prompt and someone else should do it.
  */
-int cmdline_get_passwd_input(prompts_t *p)
+SeatPromptResult cmdline_get_passwd_input(
+    prompts_t *p, cmdline_get_passwd_input_state *state, bool restartable)
 {
-    static bool tried_once = false;
-
     /*
      * We only handle prompts which don't echo (which we assume to be
      * passwords), and (currently) we only cope with a password prompt
-     * that comes in a prompt-set on its own.
+     * that comes in a prompt-set on its own. Also, we don't use a
+     * command-line password for any kind of prompt which is destined
+     * for local use rather than to be sent to the server: the idea is
+     * to pre-fill _passwords_, not private-key passphrases (for which
+     * there are better alternatives available).
      */
-    if (!cmdline_password || p->n_prompts != 1 || p->prompts[0]->echo) {
-        return -1;
+    if (p->n_prompts != 1 || p->prompts[0]->echo || !p->to_server) {
+        return SPR_INCOMPLETE;
     }
 
     /*
      * If we've tried once, return utter failure (no more passwords left
      * to try).
      */
-    if (tried_once)
-        return 0;
+    if (state->tried)
+        return SPR_SW_ABORT("Configured password was not accepted");
+
+    /*
+     * If we never had a password available in the first place, we
+     * can't do anything in any case. (But we delay this test until
+     * after trying once, so that even if we free cmdline_password
+     * below, we'll still remember that we _used_ to have one.)
+     */
+    if (!cmdline_password)
+        return SPR_INCOMPLETE;
 
     prompt_set_result(p->prompts[0], cmdline_password);
-    smemclr(cmdline_password, strlen(cmdline_password));
-    sfree(cmdline_password);
-    cmdline_password = NULL;
-    tried_once = true;
-    return 1;
-}
+    state->tried = true;
 
-/*
- * Here we have a flags word which describes the capabilities of
- * the particular tool on whose behalf we're running. We will
- * refuse certain command-line options if a particular tool
- * inherently can't do anything sensible. For example, the file
- * transfer tools (psftp, pscp) can't do a great deal with protocol
- * selections (ever tried running scp over telnet?) or with port
- * forwarding (even if it wasn't a hideously bad idea, they don't
- * have the select/poll infrastructure to make them work).
- */
-int cmdline_tooltype = 0;
+    if (!restartable) {
+        /*
+         * If there's no possibility of needing to do this again after
+         * a 'Restart Session' event, then wipe our copy of the
+         * password out of memory.
+         */
+        smemclr(cmdline_password, strlen(cmdline_password));
+        sfree(cmdline_password);
+        cmdline_password = NULL;
+    }
+
+    return SPR_OK;
+}
 
 static bool cmdline_check_unavailable(int flag, const char *p)
 {
@@ -157,6 +166,24 @@ static bool cmdline_check_unavailable(int flag, const char *p)
 
 static bool seen_hostname_argument = false;
 static bool seen_port_argument = false;
+static bool seen_verbose_option = false;
+static bool loaded_session = false;
+bool cmdline_verbose(void) { return seen_verbose_option; }
+bool cmdline_seat_verbose(Seat *seat) { return cmdline_verbose(); }
+bool cmdline_lp_verbose(LogPolicy *lp) { return cmdline_verbose(); }
+bool cmdline_loaded_session(void) { return loaded_session; }
+
+static void set_protocol(Conf *conf, int protocol)
+{
+    settings_set_default_protocol(protocol);
+    conf_set_int(conf, CONF_protocol, protocol);
+}
+
+static void set_port(Conf *conf, int port)
+{
+    settings_set_default_port(port);
+    conf_set_int(conf, CONF_port, port);
+}
 
 int cmdline_process_param(const char *p, char *value,
                           int need_save, Conf *conf)
@@ -205,14 +232,14 @@ int cmdline_process_param(const char *p, char *value,
 					 * Telnet URL.
 					 */
 
-					 /*
-					  * Skip the "telnet:" or "telnet://" prefix.
-					  */
+					/*
+					 * Skip the "telnet:" or "telnet://" prefix.
+					 */
 					p += 7;
 					if (p[0] == '/' && p[1] == '/')
 						p += 2;
 					conf_set_int(conf, CONF_protocol, PROT_TELNET);
-					conf_set_int(conf, CONF_port, 23); /* we will rewrite it later if the port is specified explicitly */
+					conf_set_int(conf, CONF_port, 23); // we will rewrite it later if the port is specified explicitly
 				}else if (!strncmp(p, "ssh:", 4)){
 					/*
 					* If the argument starts with "ssh:", set the
@@ -228,7 +255,7 @@ int cmdline_process_param(const char *p, char *value,
 						p += 2;
 					conf_set_int(conf, CONF_protocol, PROT_SSH);
 					conf_set_int(conf, CONF_port, 22); /* we will rewrite it later if the port is specified explicitly */
-				}
+				}					
 
                 /*
                  * The next thing we expect is a host name.
@@ -300,9 +327,7 @@ int cmdline_process_param(const char *p, char *value,
                             backend_vt_from_name(prefix);
 
                         if (vt) {
-                            default_protocol = vt->protocol;
-                            conf_set_int(conf, CONF_protocol,
-                                         default_protocol);
+                            set_protocol(conf, vt->protocol);
                             port_override = vt->default_port;
                         } else {
                             cmdline_error("unrecognised protocol prefix '%s'",
@@ -424,80 +449,30 @@ int cmdline_process_param(const char *p, char *value,
          * saved. */
         do_defaults(value, conf);
         loaded_session = true;
-        cmdline_session_name = dupstr(value);
         return 2;
     }
-    if (!strcmp(p, "-ssh")) {
-        //RETURN(1);
-		do {
-			if ((1) == 2 && !value)
-				return -2; 
-			ret = 1;
-			if (need_save < 0) 
-				return 1; 
-		} while (0);
-
-        //UNAVAILABLE_IN(TOOLTYPE_FILETRANSFER | TOOLTYPE_NONNETWORK);
-		do {
-			if (cmdline_check_unavailable(TOOLTYPE_FILETRANSFER | TOOLTYPE_NONNETWORK, p))
-				return ret; 
-		} while (0);
-
-        //SAVEABLE(0);
-		do {
-			if (need_save) { 
-				cmdline_save_param(p, value, 0); 
-				return ret; 
-			}
-		} while (0);
-
-        default_protocol = PROT_SSH;
-        default_port = 22;
-        conf_set_int(conf, CONF_protocol, default_protocol);
-        conf_set_int(conf, CONF_port, default_port);
-        return 1;
-    }
-    if (!strcmp(p, "-telnet")) {
-        RETURN(1);
-        UNAVAILABLE_IN(TOOLTYPE_FILETRANSFER | TOOLTYPE_NONNETWORK);
-        SAVEABLE(0);
-        default_protocol = PROT_TELNET;
-        default_port = 23;
-        conf_set_int(conf, CONF_protocol, default_protocol);
-        conf_set_int(conf, CONF_port, default_port);
-        return 1;
-    }
-    if (!strcmp(p, "-rlogin")) {
-        RETURN(1);
-        UNAVAILABLE_IN(TOOLTYPE_FILETRANSFER | TOOLTYPE_NONNETWORK);
-        SAVEABLE(0);
-        default_protocol = PROT_RLOGIN;
-        default_port = 513;
-        conf_set_int(conf, CONF_protocol, default_protocol);
-        conf_set_int(conf, CONF_port, default_port);
-        return 1;
-    }
-    if (!strcmp(p, "-raw")) {
-        RETURN(1);
-        UNAVAILABLE_IN(TOOLTYPE_FILETRANSFER | TOOLTYPE_NONNETWORK);
-        SAVEABLE(0);
-        default_protocol = PROT_RAW;
-        conf_set_int(conf, CONF_protocol, default_protocol);
-    }
-    if (!strcmp(p, "-serial")) {
-        RETURN(1);
-        /* Serial is not NONNETWORK in an odd sense of the word */
-        UNAVAILABLE_IN(TOOLTYPE_FILETRANSFER | TOOLTYPE_NONNETWORK);
-        SAVEABLE(0);
-        default_protocol = PROT_SERIAL;
-        conf_set_int(conf, CONF_protocol, default_protocol);
-        /* The host parameter will already be loaded into CONF_host,
-         * so copy it across */
-        conf_set_str(conf, CONF_serline, conf_get_str(conf, CONF_host));
+    for (size_t i = 0; backends[i]; i++) {
+        if (p[0] == '-' && !strcmp(p+1, backends[i]->id)) {
+            RETURN(1);
+            UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+            SAVEABLE(0);
+            set_protocol(conf, backends[i]->protocol);
+            if (backends[i]->default_port)
+                set_port(conf, backends[i]->default_port);
+            if (backends[i]->protocol == PROT_SERIAL) {
+                /* Special handling: the 'where to connect to' argument will
+                 * have been placed into CONF_host, but for this protocol, it
+                 * needs to be in CONF_serline */
+                conf_set_str(conf, CONF_serline,
+                             conf_get_str(conf, CONF_host));
+            }
+            return 1;
+        }
     }
     if (!strcmp(p, "-v")) {
         RETURN(1);
-        flags |= FLAG_VERBOSE;
+        UNAVAILABLE_IN(TOOLTYPE_NO_VERBOSE_OPTION);
+        seen_verbose_option = true;
     }
     if (!strcmp(p, "-l")) {
         RETURN(2);
@@ -634,7 +609,7 @@ int cmdline_process_param(const char *p, char *value,
     if (!strcmp(p, "-P")) {
         RETURN(2);
         UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
-        SAVEABLE(1);                   /* lower priority than -ssh,-telnet */
+        SAVEABLE(1);            /* lower priority than -ssh, -telnet, etc */
         conf_set_int(conf, CONF_port, atoi(value));
     }
     if (!strcmp(p, "-pw")) {
@@ -647,11 +622,47 @@ int cmdline_process_param(const char *p, char *value,
             cmdline_error("the -pw option can only be used with the "
                           "SSH protocol");
         else {
+            if (cmdline_password) {
+                smemclr(cmdline_password, strlen(cmdline_password));
+                sfree(cmdline_password);
+            }
+
             cmdline_password = dupstr(value);
             /* Assuming that `value' is directly from argv, make a good faith
              * attempt to trample it, to stop it showing up in `ps' output
              * on Unix-like systems. Not guaranteed, of course. */
             smemclr(value, strlen(value));
+        }
+    }
+
+    if (!strcmp(p, "-pwfile")) {
+        RETURN(2);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+        SAVEABLE(1);
+        /* We delay evaluating this until after the protocol is decided,
+         * so that we can warn if it's of no use with the selected protocol */
+        if (conf_get_int(conf, CONF_protocol) != PROT_SSH)
+            cmdline_error("the -pwfile option can only be used with the "
+                          "SSH protocol");
+        else {
+            Filename *fn = filename_from_str(value);
+            FILE *fp = f_open(fn, "r", false);
+            if (!fp) {
+                cmdline_error("unable to open password file '%s'", value);
+            } else {
+                if (cmdline_password) {
+                    smemclr(cmdline_password, strlen(cmdline_password));
+                    sfree(cmdline_password);
+                }
+
+                cmdline_password = chomp(fgetline(fp));
+                if (!cmdline_password) {
+                    cmdline_error("unable to read a password from file '%s'",
+                                  value);
+                }
+                fclose(fp);
+            }
+            filename_free(fn);
         }
     }
 
@@ -669,6 +680,14 @@ int cmdline_process_param(const char *p, char *value,
         SAVEABLE(0);
         conf_set_bool(conf, CONF_tryagent, false);
     }
+
+    if (!strcmp(p, "-no-trivial-auth")) {
+        RETURN(1);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+        SAVEABLE(0);
+        conf_set_bool(conf, CONF_ssh_no_trivial_userauth, true);
+    }
+
     if (!strcmp(p, "-share")) {
         RETURN(1);
         UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
@@ -757,13 +776,25 @@ int cmdline_process_param(const char *p, char *value,
         filename_free(fn);
     }
 
+    if (!strcmp(p, "-cert")) {
+        Filename *fn;
+        RETURN(2);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+        SAVEABLE(0);
+        fn = filename_from_str(value);
+        conf_set_filename(conf, CONF_detached_cert, fn);
+        filename_free(fn);
+    }
+
     if (!strcmp(p, "-4") || !strcmp(p, "-ipv4")) {
         RETURN(1);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
         SAVEABLE(1);
         conf_set_int(conf, CONF_addressfamily, ADDRTYPE_IPV4);
     }
     if (!strcmp(p, "-6") || !strcmp(p, "-ipv6")) {
         RETURN(1);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
         SAVEABLE(1);
         conf_set_int(conf, CONF_addressfamily, ADDRTYPE_IPV6);
     }
@@ -878,6 +909,20 @@ int cmdline_process_param(const char *p, char *value,
         filename_free(fn);
     }
 
+    if (!strcmp(p, "-logoverwrite")) {
+        RETURN(1);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+        SAVEABLE(0);
+        conf_set_int(conf, CONF_logxfovr, LGXF_OVR);
+    }
+
+    if (!strcmp(p, "-logappend")) {
+        RETURN(1);
+        UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
+        SAVEABLE(0);
+        conf_set_int(conf, CONF_logxfovr, LGXF_APN);
+    }
+
     if (!strcmp(p, "-proxycmd")) {
         RETURN(2);
         UNAVAILABLE_IN(TOOLTYPE_NONNETWORK);
@@ -894,7 +939,6 @@ int cmdline_process_param(const char *p, char *value,
         !strcmp(p, "-restrictacl")) {
         RETURN(1);
         restrict_process_acl();
-        restricted_acl = true;
     }
 #endif
 
@@ -903,9 +947,8 @@ int cmdline_process_param(const char *p, char *value,
 
 void cmdline_run_saved(Conf *conf)
 {
-    int pri, i;
-    for (pri = 0; pri < NPRIORITIES; pri++) {
-        for (i = 0; i < saves[pri].nsaved; i++) {
+    for (size_t pri = 0; pri < NPRIORITIES; pri++) {
+        for (size_t i = 0; i < saves[pri].nsaved; i++) {
             cmdline_process_param(saves[pri].params[i].p,
                                   saves[pri].params[i].value, 0, conf);
             sfree(saves[pri].params[i].p);
