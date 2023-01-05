@@ -4,12 +4,13 @@ client.
 PuTTY is built using CMake <https://cmake.org/>. To compile in the
 simplest way (on any of Linux, Windows or Mac), do next steps:
 (This version tested only for Windows)
-1. Open Developer Command prompt of Visual Studio
-2. Go to build directory
+1. create directory 'build' in root of project
+2. Open Developer Command prompt of Visual Studio
+3. Go to build directory
   cd build
-3.
-  cmake ..
 4.
+  cmake ..
+5.
   cmake --build . --Release
 or
   cmake --build . --Debug
