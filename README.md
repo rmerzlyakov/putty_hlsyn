@@ -24,8 +24,12 @@ If a line break occurs in the middle of the search expression, then the regular 
 To avoid this, make the window as wide as possible so that the text goes in without hyphenation.
 In some cases, highlighting occurs in unintended places, for example, if "SNMP OID 1.3.6.2.46.0.2.4" is encountered, some of the numbers will be highlighted, because it is impossible to determine the IP address of this or something else without analyzing the context.
 
+## Command Line
+This version support URL notation for protocol and host, for example putty.exe ssh://192.168.1.1 or putty.exe telnet://192.168.1.1
+You can define putty as protocol handler in browser and use links for quick acces to desired hosts. 
+
 ## Version
-This is modified version of PuTTY 0.74 from https://www.putty.org/
+This is modified version of PuTTY 0.78 from https://www.putty.org/
 
 ## Feedback
 Comments and suggestions are welcome to putty_hlsyn@list.ru
